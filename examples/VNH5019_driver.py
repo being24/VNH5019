@@ -53,7 +53,9 @@ class VNH5019:
         self.one_count = 360 * 4 / (64 * 50)
         self.rotation_speed = 0.0
         self.print_counter = 0
-        self.pos = 0.0
+        self.angle = 0.0
+        self.prev_angle = 0.0
+        self.diff = 0.0
 
         # PID制御用変数
         self.P_gain = 0.5
@@ -93,15 +95,19 @@ class VNH5019:
 
         self.count += way
 
-        self.pos = self.count * self.one_count
+        self.angle = self.count * self.one_count
+
+        eplased_angle = self.angle - self.prev_angle
         eplased_time = (current_time - self.prev_current_time) / \
             timedelta(seconds=1)
-        self.rotation_speed = self.one_count / eplased_time
+        self.rotation_speed = eplased_angle / eplased_time
+        # print(f"eplased_time={eplased_time:.3f}")
 
-        self.logger.debug(f"pos={self.pos:.0f}")
-        self.logger.debug(f"rotation_speed={self.rotation_speed:.0f}")
+        # self.logger.debug(f"angle={self.angle:.0f}")
+        # self.logger.debug(f"rotation_speed={self.rotation_speed:.0f}")
 
         self.prev_current_time = current_time
+        self.prev_angle = self.angle
 
     def cleanup(self):
         """インスタンス破棄時に実行、出力を止める
@@ -180,13 +186,13 @@ class VNH5019:
         self.pi.write(self.in2, 1)
         self.pwm.setPWM(abs(pwm_duty_cycle))
 
-    def get_current_pos(self) -> float:
+    def get_current_angle(self) -> float:
         """現在の角度を返す
 
         Returns:
             float: 今の角度
         """
-        return self.pos
+        return self.angle
 
     def get_rotation_speed(self) -> float:
         """現在の回転速度を返す
@@ -196,10 +202,10 @@ class VNH5019:
         """
         return self.rotation_speed
 
-    def reset_pos(self):
+    def reset_angle(self):
         """角度を初期化する
         """
-        self.pos = 0
+        self.angle = 0
         self.count = 0
 
     def motor_speed(self, speed: float):
@@ -208,10 +214,9 @@ class VNH5019:
         Args:
             speed (float): 回転速度(degree/s)
         """
-        current_speed = self.get_rotation_speed()
 
-        raw_gain = self.P_gain * (current_speed - speed)
-        duty_cycle = raw_gain * 500
+        duty_cycle = 5 * speed
+
         duty_cycle = int(duty_cycle)
 
         if duty_cycle > 4095:
@@ -219,22 +224,65 @@ class VNH5019:
         elif duty_cycle < -4095:
             duty_cycle = -4095
 
+        self.drive(pwm_duty_cycle=duty_cycle)
+
+    def motor_speed_EX(self, speed: float, KP: float = 1.0):
+        """モーターを特定速度で回転させる関数、速度フィードバック付き
+
+        Args:
+            speed (float): 回転速度(degree/s)
+            KP (float, optional): 比例ゲイン. Defaults to 1.0.
+        """
+
+        current_speed = self.get_rotation_speed()
+
+        diff = speed - current_speed
+        if abs(diff) > 6000:
+            pass
+        else:
+            self.diff = diff
+
+        raw_gain = speed + KP * self.diff / (500 / abs(speed))
+        speed = int(raw_gain)
+
         if self.print_counter % 50 == 0:
-            print(f"diff={(speed - current_speed):.0f}")
-            print(f"duty_cycle={duty_cycle}")
-            print(f"speed={current_speed:.0f}")
+            if abs(self.diff) > 0:
+                # print(f"gain={(100 / speed):.5f}")
+                print(f"diff={self.diff}")
+                print(f"input_speed={speed}")
+                # print(f"raw_gain={raw_gain}")
+                print(f"current_speed={current_speed:.0f}")
 
         self.print_counter += 1
 
-        self.drive(pwm_duty_cycle=duty_cycle)
+        self.motor_speed(speed=speed)
 
     def drive_motor_speed(self, speed: float, drive_time: float):
+        """特定速度で特定時間回転させる関数
+
+        Args:
+            speed (float): 回転速度
+            drive_time (float): 回転時間
+        """
         drive_time = drive_time * 1000 * 1000
 
         start_time = datetime.now()
+
+        self.print_counter = 0
+
         while True:
             driven_time = (datetime.now() - start_time) / \
                 timedelta(microseconds=1)
+
+            """
+            if self.print_counter % 50 == 0:
+                current_speed = self.get_rotation_speed()
+
+                # print(f"duty_cycle={duty_cycle}")
+                print(f"speed={current_speed:.0f}")
+            """
+
+            self.print_counter += 1
 
             self.motor_speed(speed=speed)
 
@@ -242,8 +290,36 @@ class VNH5019:
                 self.brake()
                 break
 
+    def drive_motor_speed_EX(
+            self,
+            speed: float,
+            drive_time: float,
+            KP: float = 1.0):
+        """特定速度で特定時間回転させる関数、フィードバック付き
+
+        Args:
+            speed (float): [description]
+            drive_time (float): [description]
+            KP (float, optional): [description]. Defaults to 2.0.
+        """
+        drive_time = drive_time * 1000 * 1000
+
+        start_time = datetime.now()
+
+        self.print_counter = 0
+
+        while True:
+            driven_time = (datetime.now() - start_time) / \
+                timedelta(microseconds=1)
+
+            self.motor_speed_EX(speed=speed, KP=KP)
+
+            if driven_time > drive_time:
+                self.brake()
+                break
+
     def rotate_motor(self, pwm_duty_cycle: int, rotation_angle: float):
-        """モーターを指定角度まで指定のduty比で回転させる
+        """モーターを指定角度まで指定のduty比で回転させる関数
 
         Args:
             pwm_duty_cycle (int): duty比
@@ -251,7 +327,7 @@ class VNH5019:
         """
 
         while True:
-            current_angle = self.get_current_pos()
+            current_angle = self.get_current_angle()
 
             diff = rotation_angle - current_angle
 
@@ -268,7 +344,7 @@ class VNH5019:
 
         cnt = 0
         while True:
-            current_angle = self.get_current_pos()
+            current_angle = self.get_current_angle()
 
             diff = rotation_angle - current_angle
 
@@ -285,53 +361,51 @@ class VNH5019:
                     self.brake()
                     break
 
-    def rotate_motor_PID(self, pwm_duty_cycle: int, rotation_angle: float):
-        """モーターをPID制御で指定角度まで指定のduty比で回転させる
+    def rotate_motor_EX(
+        self,
+        rotation_angle: float,
+        KP: float = 5,
+        max_speed: int = 4095,
+        min_speed: int = 800,
+    ):
+        """モーターをP制御で指定角度まで回転させる関数
 
         Args:
-            pwm_duty_cycle (int): duty比
             rotation_angle (float): 目標角度
+            P (float): PIDのP
+            max_speed (int): 最大速度
+            min_speed (int): 最小速度
         """
 
-        while True:
-            current_angle = self.get_current_pos()
-
-            diff = rotation_angle - current_angle
-
-            pow = abs(diff) * 50
-            pow = int(pow)
-            if pow < 600:
-                pow = 600
-            elif pow > 4095:
-                pow = 4095
-
-            print(pow)
-
-            if diff > 0:
-                self._forward(pow)
-            else:
-                self._back(pow)
-
-            self.logger.debug(current_angle)
-
-            if abs(diff) < self.one_count:
-                self.free()
-                break
-
         cnt = 0
+        if KP == 0:
+            raise ValueError("can't define KP as 0.0")
+
         while True:
-            current_angle = self.get_current_pos()
+            current_angle = self.get_current_angle()
 
             diff = rotation_angle - current_angle
 
-            if diff > 0:
-                self._forward(600)
-            else:
-                self._back(600)
+            pow = KP * diff
+            pow = int(pow)
+            if abs(pow) < min_speed:
+                if pow > 0:
+                    pow = min_speed
+                else:
+                    pow = min_speed * -1
+            elif abs(pow) > max_speed:
+                if pow > 0:
+                    pow = max_speed
+                else:
+                    pow = max_speed * -1
 
-            self.logger.debug(current_angle)
+            # self.drive(pwm_duty_cycle=pow)
+            self.motor_speed_EX(speed=pow / 6)
 
-            if abs(diff) < self.one_count:
+            self.logger.debug(f"current_angle={current_angle}")
+            self.logger.debug(f"pow={pow}")
+
+            if abs(diff) <= self.one_count:
                 cnt += 1
                 if cnt == 10:
                     self.brake()

@@ -129,14 +129,15 @@ if __name__ == "__main__":
         current_time = datetime.now()
 
         count += way
+        print(way)
 
         pos = count * one_count
         eplased_time = (current_time - prev_current_time) / \
             timedelta(seconds=1)
         rotation_speed = one_count / eplased_time
 
-        print(f"pos={pos:.0f}")
-        print(f"rotation_speed={rotation_speed:.0f}")
+        # print(f"pos={pos:.0f}")
+        # print(f"rotation_speed={rotation_speed:.0f}")
 
         prev_current_time = current_time
 
