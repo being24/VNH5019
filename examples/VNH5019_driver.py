@@ -55,10 +55,11 @@ class VNH5019:
         self.print_counter = 0
         self.angle = 0.0
         self.prev_angle = 0.0
-        self.diff = 0.0
 
         # PID制御用変数
-        self.P_gain = 0.5
+        self.diff = 0.0
+        self.error = 0.0
+        self.prev_time = datetime.now()
 
         # ロータリーエンコーダの初期化
         RotaryEncoder(pi, 6, 5, self.callback)
@@ -208,6 +209,13 @@ class VNH5019:
         self.angle = 0
         self.count = 0
 
+    def reset_PIDparams(self):
+        """PIDパラメータを初期化する
+        """
+        self.error = 0
+        self.diff = 0
+        self.prev_time = datetime.now()
+
     def motor_speed(self, speed: float):
         """モーターを特定速度で回転させる関数
 
@@ -226,7 +234,13 @@ class VNH5019:
 
         self.drive(pwm_duty_cycle=duty_cycle)
 
-    def motor_speed_EX(self, speed: float, KP: float = 1.0):
+    def motor_speed_EX(
+        self,
+        speed: float,
+        KP: float = 0.5,
+        KI: float = 0.0,
+        KD: float = 0.0,
+    ):
         """モーターを特定速度で回転させる関数、速度フィードバック付き
 
         Args:
@@ -235,6 +249,7 @@ class VNH5019:
         """
 
         current_speed = self.get_rotation_speed()
+        current_time = datetime.now()
 
         diff = speed - current_speed
         if abs(diff) > 6000:
@@ -242,18 +257,27 @@ class VNH5019:
         else:
             self.diff = diff
 
-        raw_gain = speed + KP * self.diff / (500 / abs(speed))
+        self.error += self.diff
+
+        delta_time = (current_time - self.prev_time) / timedelta(seconds=1)
+
+        raw_gain = speed + KP * self.diff + KI * self.error * delta_time + KD * self.error / delta_time
         speed = int(raw_gain)
 
         if self.print_counter % 50 == 0:
             if abs(self.diff) > 0:
                 # print(f"gain={(100 / speed):.5f}")
-                print(f"diff={self.diff}")
+                # print(f"diff={self.diff}")
                 print(f"input_speed={speed}")
                 # print(f"raw_gain={raw_gain}")
                 print(f"current_speed={current_speed:.0f}")
+                # print(f"error={self.error}")
+                # print(f"KI={KI}")
+                print(f"angle={self.get_current_angle()}")
+                print(f"delta_time={delta_time}")
 
         self.print_counter += 1
+        self.prev_time = current_time
 
         self.motor_speed(speed=speed)
 
@@ -291,17 +315,23 @@ class VNH5019:
                 break
 
     def drive_motor_speed_EX(
-            self,
-            speed: float,
-            drive_time: float,
-            KP: float = 1.0):
+        self,
+        speed: float,
+        drive_time: float,
+        KP: float = 0.5,
+        KI: float = 0.0,
+        KD: float = 0.0,
+    ):
         """特定速度で特定時間回転させる関数、フィードバック付き
 
         Args:
             speed (float): [description]
             drive_time (float): [description]
             KP (float, optional): [description]. Defaults to 2.0.
+            KI (float, optional): [description]. Defaults to 0.0.
         """
+        self.reset_PIDparams()
+
         drive_time = drive_time * 1000 * 1000
 
         start_time = datetime.now()
@@ -312,7 +342,7 @@ class VNH5019:
             driven_time = (datetime.now() - start_time) / \
                 timedelta(microseconds=1)
 
-            self.motor_speed_EX(speed=speed, KP=KP)
+            self.motor_speed_EX(speed=speed, KP=KP, KI=KI, KD=KD)
 
             if driven_time > drive_time:
                 self.brake()
@@ -365,6 +395,8 @@ class VNH5019:
         self,
         rotation_angle: float,
         KP: float = 5,
+        KI: float = 0.0,
+        KD: float = 0.0,
         max_speed: int = 4095,
         min_speed: int = 800,
     ):
@@ -377,9 +409,13 @@ class VNH5019:
             min_speed (int): 最小速度
         """
 
+        self.reset_PIDparams()
+
         cnt = 0
         if KP == 0:
             raise ValueError("can't define KP as 0.0")
+
+        flag = 1
 
         while True:
             current_angle = self.get_current_angle()
@@ -399,14 +435,21 @@ class VNH5019:
                 else:
                     pow = max_speed * -1
 
+            if abs(diff) <= self.one_count:
+                flag = 1
+                cnt += 1
+
+            if flag == 1:
+                pow = pow / 6
+                # KP = KP / 10
+                KI = KD = 0
+
+            if cnt == 10:
+                self.brake()
+                break
+
             # self.drive(pwm_duty_cycle=pow)
-            self.motor_speed_EX(speed=pow / 6)
+            self.motor_speed_EX(speed=pow, KP=KP, KI=KI, KD=KD)
 
             self.logger.debug(f"current_angle={current_angle}")
             self.logger.debug(f"pow={pow}")
-
-            if abs(diff) <= self.one_count:
-                cnt += 1
-                if cnt == 10:
-                    self.brake()
-                    break

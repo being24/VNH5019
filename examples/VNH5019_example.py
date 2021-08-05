@@ -22,9 +22,15 @@ if __name__ == "__main__":
         pwm_channel=0,
         logging_level=INFO)
 
-    motor0.drive_motor_speed_EX(speed=2000, drive_time=3)
-    # motor0.motor_speed(speed=-200)
-    time.sleep(1)
+    # motor0.motor_speed(speed=200)
+    # time.sleep(5)
+
+    motor0.drive_motor_speed_EX(
+        speed=4000,
+        drive_time=3,
+        KP=0.2,
+        KI=1,
+        KD=0)
 
     motor0.free()
     print(motor0.get_current_angle())
@@ -33,7 +39,7 @@ if __name__ == "__main__":
 
     print("-" * 10)
 
-    motor0.rotate_motor_EX(rotation_angle=-1234)
+    motor0.rotate_motor_EX(rotation_angle=-2700, KP=2, KI=0.5, KD=0)
 
     time.sleep(1)
     print("-" * 10)
