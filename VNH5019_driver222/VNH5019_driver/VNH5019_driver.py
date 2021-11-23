@@ -9,9 +9,9 @@ import pigpio
 from PCA9685_wrapper import PWM
 
 
-class TA7291P:
+class VNH5019:
     def __init__(self, gpio_in1: int, gpio_in2: int, pwm_channel: int):
-        """TA7291Pのインスタンスを初期化
+        """VNH5019のインスタンスを初期化
 
         Args:
             gpio_in1 (int): gpioピン1

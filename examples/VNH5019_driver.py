@@ -18,7 +18,7 @@ class VNH5019:
             driver_in2: int,
             pwm_channel: int,
             logging_level: int = INFO):
-        """TA7291Pのインスタンスを初期化
+        """VNH5019のインスタンスを初期化
 
         Args:
             pi (pigpio.pi): pigpioインスタンス
