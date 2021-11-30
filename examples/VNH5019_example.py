@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import time
-from logging import DEBUG, ERROR, FATAL, INFO
+from logging import DEBUG, ERROR, FATAL, INFO, WARN
 
 import pigpio
 
@@ -17,32 +17,34 @@ if __name__ == "__main__":
 
     motor0 = MOTOR(
         pi,
-        driver_in1=20,
-        driver_in2=21,
+        driver_out1=20,
+        driver_out2=21,
+        encoder_in1=5,
+        encoder_in2=6,
         pwm_channel=0,
-        logging_level=INFO)
+        gear_ratio=150,
+        logging_level=WARN)
 
-    # motor0.motor_speed(speed=200)
-    # time.sleep(5)
+    motor1 = MOTOR(
+        pi,
+        driver_out1=23,
+        driver_out2=24,
+        encoder_in1=27,
+        encoder_in2=22,
+        pwm_channel=1,
+        gear_ratio=50,
+        logging_level=WARN)
 
-    motor0.drive_motor_speed_EX(
-        speed=4000,
-        drive_time=3,
-        KP=0.2,
-        KI=1,
-        KD=0)
+    time.sleep(3)
 
-    motor0.free()
-    print(motor0.get_current_angle())
+    motor0.rotate_motor(pwm_duty_cycle=500, rotation_angle=180)
+    motor1.rotate_motor(pwm_duty_cycle=500, rotation_angle=180)
+    #motor0.drive(pwm_duty_cycle=4095)
+    #motor1.drive(pwm_duty_cycle=4095)
 
-    time.sleep(1)
-
+    time.sleep(3)
     print("-" * 10)
-
-    motor0.rotate_motor_EX(rotation_angle=-2700, KP=2, KI=0.5, KD=0)
-
-    time.sleep(1)
-    print("-" * 10)
     print(motor0.get_current_angle())
+    print(motor1.get_current_angle())
 
-    # メモ　I制御を導入して平滑化したい、ゲインにスピードの逆数かけるのやめたい
+    # メモ I制御を導入して平滑化したい、ゲインにスピードの逆数かけるのやめたい

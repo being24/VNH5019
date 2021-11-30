@@ -14,29 +14,32 @@ class VNH5019:
     def __init__(
             self,
             pi: pigpio.pi,
-            driver_in1: int,
-            driver_in2: int,
+            driver_out1: int,
+            driver_out2: int,
+            encoder_in1: int,
+            encoder_in2: int,
             pwm_channel: int,
+            gear_ratio: float,
             logging_level: int = INFO):
         """VNH5019のインスタンスを初期化
 
         Args:
             pi (pigpio.pi): pigpioインスタンス
-            driver_in1 (int): モータードライバのIN1
-            driver_in2 (int): モータードライバのIN2
+            driver_out1 (int): モータードライバのIN1
+            driver_out2 (int): モータードライバのIN2
             pwm_channel (int): PCA9685のチャンネル
             logging_level (int): ロガーのレベル
         """
 
         # PWMドライバの初期化
-        self.pwm = PWM(pwm_channel, freq=1000)
+        self.pwm = PWM(pwm_channel, freq=16000)
 
         # pigpioの初期化
         self.pi = pi
 
         # pin設定をクラス内変数化
-        self.in1 = driver_in1
-        self.in2 = driver_in2
+        self.in1 = driver_out1
+        self.in2 = driver_out2
 
         # 制御ピンの初期化
         self.pi.set_mode(self.in1, pigpio.OUTPUT)
@@ -50,7 +53,7 @@ class VNH5019:
         # ロータリーエンコーダ用変数
         self.count = 0.0
         self.prev_current_time = datetime.now()
-        self.one_count = 360 * 4 / (64 * 50)
+        self.one_count = 360 * 4 / (64 * gear_ratio)
         self.rotation_speed = 0.0
         self.print_counter = 0
         self.angle = 0.0
@@ -61,8 +64,11 @@ class VNH5019:
         self.error = 0.0
         self.prev_time = datetime.now()
 
+        # 終了処理フラグ
+        self.in_exit = False
+
         # ロータリーエンコーダの初期化
-        RotaryEncoder(pi, 6, 5, self.callback)
+        RotaryEncoder(pi, encoder_in1, encoder_in2, self.callback)
 
         # 終了時に全出力を切る
         atexit.register(self.cleanup)
@@ -98,11 +104,11 @@ class VNH5019:
 
         self.angle = self.count * self.one_count
 
-        eplased_angle = self.angle - self.prev_angle
-        eplased_time = (current_time - self.prev_current_time) / \
+        elapsed_angle = self.angle - self.prev_angle
+        elapsed_time = (current_time - self.prev_current_time) / \
             timedelta(seconds=1)
-        self.rotation_speed = eplased_angle / eplased_time
-        # print(f"eplased_time={eplased_time:.3f}")
+        self.rotation_speed = elapsed_angle / elapsed_time
+        # print(f"elapsed_time={elapsed_time:.3f}")
 
         # self.logger.debug(f"angle={self.angle:.0f}")
         # self.logger.debug(f"rotation_speed={self.rotation_speed:.0f}")
@@ -113,8 +119,12 @@ class VNH5019:
     def cleanup(self):
         """インスタンス破棄時に実行、出力を止める
         """
+        if not self.in_exit:
+            return
         self.free()
         self.pi.stop()
+        self.in_exit = True
+
 
     def free(self):
         """フリー状態にする
@@ -261,9 +271,11 @@ class VNH5019:
 
         delta_time = (current_time - self.prev_time) / timedelta(seconds=1)
 
-        raw_gain = speed + KP * self.diff + KI * self.error * delta_time + KD * self.error / delta_time
+        raw_gain = speed + KP * self.diff + KI * self.error * \
+            delta_time + KD * self.error / delta_time
         speed = int(raw_gain)
 
+        """
         if self.print_counter % 50 == 0:
             if abs(self.diff) > 0:
                 # print(f"gain={(100 / speed):.5f}")
@@ -275,6 +287,7 @@ class VNH5019:
                 # print(f"KI={KI}")
                 print(f"angle={self.get_current_angle()}")
                 print(f"delta_time={delta_time}")
+        """
 
         self.print_counter += 1
         self.prev_time = current_time
